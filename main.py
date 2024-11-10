@@ -1,6 +1,8 @@
 from itertools import chain, combinations_with_replacement, product
 from pulp import *
 
+# DISCLAIMER: THIS CODE ONLY WORKS FOR mstar = 3
+
 NMAX = 7
 mstar = 3
 gamma = 25.597784
@@ -67,8 +69,8 @@ def setup():
     prob = LpProblem("Chen_et_al_Variable-Length_Coupling", LpMinimize)
     lambda_obj = LpVariable("lambda_obj", lowBound=1, upBound=2)
     prob += lambda_obj, "Objective: Minize LambdaObj"
-    prob += lambda_obj - lambdas["sing"] >= 0, "LP 4, Page 16, l_sing >= l_sing"
-    prob += lambda_obj - lambdas["good"] >= 0, "LP 4, Page 16, l_sing >= l_good"
+    prob += lambda_obj - lambdas["sing"] >= 0, "LP 4, Page 16, l_obj >= l_sing"
+    prob += lambda_obj - lambdas["good"] >= 0, "LP 4, Page 16, l_obj >= l_good"
     prob += (
         lambda_obj
         - lambdas["bad"] * (gamma) / (gamma + 1)
@@ -92,23 +94,69 @@ def flip_constraints():
 
 min_memo = {}
 min_consts = []
+min_vars = []
 
+def min_var(l):
+    if len(l) == 4:
+        a, A, b, B = l
+        if a > b:
+            a, A, b, B = b, B, a, A
+        
+        l = (a, A, b, B)
+        if l in min_memo: return min_memo[l]
 
-def min_var(expr1, expr2, name):
-    if name in min_memo:
-        return min_memo[name]
-    min_val = pulp.LpVariable(name, upBound=1)
-    min_consts.append(min_val <= expr1)
-    min_consts.append(min_val <= expr2)
-    min_memo[name] = min_val
-    return min_val
+        if A >= B:
+            min_memo[l] = p(b) - p(B)
+        elif A >= NMAX + 1:
+            min_memo[l] = p(b) - p(B)
+        elif B >= NMAX + 1:
+            min_memo[l] = min_var((b, a, B))
+        else:
+            new_var = LpVariable(f'min-{a}-{A}-{b}-{B}', lowBound=0, upBound=1)
+            min_memo[l] = new_var
+            min_consts.append(p(a) - p(A) - min_memo[l] >= 0)
+            min_consts.append(p(b) - p(B) - min_memo[l] >= 0)
+
+    else:
+        b, a, A = l
+
+        if l in min_memo: return min_memo[l]
+
+        if a >= b:
+            min_memo[l] = p(b)
+        elif A >= NMAX + 1:
+            min_memo[l] = p(a)
+        else:
+            new_var = LpVariable(f'min-{b}-{a}-{A}', lowBound=0, upBound=1)
+            min_memo[l] = new_var
+            min_consts.append(p(b) - min_memo[l] >= 0)
+            min_consts.append(p(a) - p(A) - min_memo[l] >= 0)
+
+    return min_memo[l]
 
 
 def f(A, B, av, bv, i, imax, jmax):
     qi = p(av[i]) - p(A) if i == imax else p(av[i])
     qi_p = p(bv[i]) - p(B) if i == jmax else p(bv[i])
 
-    min_qi_qi_p = min_var(qi, qi_p, f"min_qi_qi_p_{str(av)}_{str(av)}")
+    # four cases (imax always 1)
+    # 1. i = 0 & (imax = jmax)
+    # 2. i = 0 & (imax != jmax)
+    # 3. i = 1 & (imax = jmax)
+    # 4. i = 1 & (imax != jmax)
+
+    min_qi_qi_p = None
+    if i == 0:
+        if imax == jmax:
+            min_qi_qi_p = min_var((av[i], A, bv[i], B))
+        else:
+            min_qi_qi_p = min_var((bv[i], av[i], A))
+    else: # i == 1
+        if imax == jmax:
+            min_qi_qi_p = p(max(av[i], bv[i])) 
+        else:
+            min_qi_qi_p = min_var((av[i], bv[i], B))
+
 
     return av[i] * qi + bv[i] * qi_p - min_qi_qi_p
 
@@ -134,8 +182,9 @@ def constraints_11(av, bv):
                 + sum(f(A, B, av, bv, i, aimax, bimax) for i in range(0, length))
             )
             lamb = case_to_lambda((A, B, av, bv))
-            constraints.append(1 + H - (lamb * length) <= 0)
 
+    # only constrain the tightest
+    constraints.append(1 + H - (lamb * length) <= 0)
     return constraints
 
 
@@ -173,6 +222,7 @@ def hamming_constraints():
     # constraint 11
     for length in range(1, mstar):
         pairs = build_pair_vecs(length)
+        i = 0
         for av, bv in pairs:
             constraints.extend(constraints_11(av, bv))
 
