@@ -1,33 +1,39 @@
 from itertools import chain, combinations_with_replacement, product
 from pulp import *
+from scipy.optimize import minimize
 
 # DISCLAIMER: THIS CODE ONLY WORKS FOR mstar = 3
+
 
 NMAX = 7
 mstar = 3
 d = 1e15
-k_goal = 1.8315 * d
-p2_goal = 1/3
-c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
+n = 1e20
+
+output_H = False
+
+# k_goal = 1.832 * d
+# p2_goal = 1/3
+# c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
 # gamma = ((6 * k_goal - d - 2) * (k_goal + 2 * p2_goal * d)) / (4 * (k_goal - d - 2) * (k_goal - d - 1))
-# gamma = 1 / ((k_goal - p2_goal *d) / (2 * k_goal))
-gamma = ((k_goal - 2) * (k_goal + 2 * p2_goal * d)) / ((k_goal - d - 2) * (k_goal - d - 2))
-print(c, gamma)
+# gamma = ((k_goal + (1 + 2 * p2_goal) * d - 2) * (k_goal + 2 * p2_goal * d)) / ((k_goal - d - 2) ** 2)
+# gamma = (((n * k_goal) ** 2) * (k_goal + 2 * p2_goal * d)) / (((k_goal - d - 2) ** 2) * (n * k_goal - 2 * (1 + p2_goal) * d))
+# print(c, gamma)
 # c_gamma = 25.597784
-c_gamma = c * gamma
-print(c_gamma)
+# c_gamma = c * gamma
+# print(c_gamma)
 # c_gamma = 1/1000000000000
 # c_gamma = 10000
 
 p_vars = [
-    LpVariable(f"p{i}", lowBound=1 if i == 1 else 0, upBound=1)
+    LpVariable(f"p{i}", lowBound=1 if i == 1 else 0, upBound=1/i)
     for i in range(1, NMAX + 1)
 ]
 lambdas = {
     key: LpVariable(f"lambda_{key}", lowBound=1, upBound=2)
     for key in [
         "bad", 
-        # "sing", 
+        "other", 
         "good"
     ]
 }
@@ -53,7 +59,7 @@ def maxes(v):
 
 
 def build_vecs(length):
-    vecs = list(combinations_with_replacement(range(0, NMAX + 1), length))
+    vecs = list(combinations_with_replacement(range(1, NMAX + 1), length))
     return [x for x in vecs if sum(x) != 0]
 
 
@@ -81,24 +87,55 @@ def build_pair_vecs(length):
 #     # if len(av) == 1:
 #     #     print(case)
 
-#     return lambdas["sing"] if len(av) == 1 else lambdas["good"]
+#     return lambdas["other"] if len(av) == 1 else lambdas["good"]
 
 def case_to_lambda(case):
     A, B, av, bv = case
 
-    if (A == 2 and B == 2) or (A == 3 and B == 3): return lambdas["good"]
-    # if (A == B): return lambdas['good']
+    is_good, is_bad = False, False
 
-    # if len(av) == 1:
-    #     print(case)
+    # all unblocked:
+    # dc = 1, av (1) bv (1)
+    # dc = 2, av (1, 1) bv (1, 1)
+    # if all(av[i] == 1 for i in range(len(av))) and all(bv[i] == 1 for i in range(len(bv))) and len(av) == len(bv):
+    #     is_good = True
 
-    return lambdas["bad"]
+    # # >= singly blocked if 
+    # # if at any point in av or bv, one of these is 1
+    # # and it has a nonzero difference
+    # for i in range(len(av)):
+    #     if abs(av[i] - bv[i]) >= 1:
+    #         # print(A, B, av, bv)
+    #         is_bad = True
 
-def setup():
+    for i in range(len(av)):
+        # there exists an unblocked config
+        if av[i] == bv[i] == 1:
+            is_good = True
+
+        # there exists >= 1 singly blocked config
+        if abs(av[i] - bv[i]) >= 1 and min(av[i], bv[i]) == 1:
+            is_bad = True
+
+    if not (is_good or is_bad): 
+        # print("Other: ", A, B, av, bv)
+        return lambdas['other']
+    
+    # if is_good:
+    #     # print("Good: ", A, B, av, bv)
+    #     pass
+
+    # if is_bad:
+    #     print("Bad: ", A, B, av, bv)
+
+    return lambdas["good"] if is_good else lambdas['bad']
+
+def setup(c_gamma, k_goal, p2_goal):
     prob = LpProblem("Chen_et_al_Variable-Length_Coupling", LpMinimize)
     lambda_obj = LpVariable("lambda_obj", lowBound=1, upBound=2)
     prob += lambda_obj, "Objective: Minize LambdaObj"
-    # prob += lambda_obj - lambdas["sing"] >= 0, "LP 4, Page 16, l_obj >= l_sing"
+    prob += lambda_obj - k_goal >= 0 # i'm not sure if this is right, this is how they write it in their paper
+    prob += lambda_obj - lambdas["other"] >= 0, "LP 4, Page 16, l_obj >= l_other"
     prob += lambda_obj - lambdas["good"] >= 0, "LP 4, Page 16, l_obj >= l_good"
     prob += (
         lambda_obj
@@ -107,6 +144,7 @@ def setup():
         >= 0,
         "LP 4, Page 16, c_gamma Mixed Coupling Final Constraints",
     )
+    prob += p(2) - p2_goal <= 0
 
     return prob
 
@@ -213,6 +251,8 @@ def constraints_11(av, bv):
             lamb = case_to_lambda((A, B, av, bv))
 
     # only constrain the tightest
+    if output_H:
+        print(f'{A}, {B}, {av}, {bv}, H - {(1 + value(H)) / length}')
     constraints.append(1 + H - (lamb * length) <= 0)
     return constraints
 
@@ -271,16 +311,48 @@ def add_constraints(prob):
             continue
         prob += c
 
-
-if __name__ == "__main__":
-    prob = setup()
+def solve(_k_goal, _p2_goal, is_final = False):
+    k_goal, p2_goal = _k_goal * d, _p2_goal
+    c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
+    gamma = ((k_goal + (1 + 2 * p2_goal) * d - 2) * (k_goal + 2 * p2_goal * d)) / ((k_goal - d - 2) * (k_goal - d - 2))
+    print(c, gamma)
+    c_gamma= c * gamma
+    prob = setup(c_gamma, _k_goal, _p2_goal)
     add_constraints(prob)
 
-    # print("Problem:\n")
-    # print(prob)
-    # print("\n" * 5)
+    # prob.writeLP("ChenLP.lp")
+    solver = pulp.PULP_CBC_CMD(msg=False)
+    prob.solve(solver)
+    impt_vars = set(['lambda_bad', 'lambda_good', 'lambda_obj', 'lambda_other', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'])
+    # print(f'LP for ')
+    if is_final:
+        for v in prob.variables():
+            if v.name in impt_vars:
+                print(v.name, "=", v.varValue)
+        global output_H
+        output_H = True
+        hamming_constraints()
+    val = prob.variablesDict()['lambda_obj'].varValue
 
-    prob.writeLP("ChenLP.lp")
-    prob.solve()
-    for v in prob.variables():
-        print(v.name, "=", v.varValue)
+    if prob.status != 1: return float('inf')
+    del prob
+    return val
+
+def objective(params):
+    print(params)
+    param1, param2 = params
+    if param1 > 11/6 or param1 < 1.6:
+        return float('inf')
+    if param2 > 1/3 or param2 <= 0: 
+        return float('inf')
+    return solve(param1, param2)
+
+if __name__ == "__main__":
+    # 1.8322602
+    initial_guess = [1.8322578, 0.30955575]
+    result = minimize(objective, initial_guess, method='Nelder-Mead')
+    print("Optimized parameters:", result.x)
+    print("Minimum value:", result.fun)
+    final = tuple(result.x)
+    solve(final[0], final[1], True)
+    # solve(initial_guess[0], initial_guess[1], True)

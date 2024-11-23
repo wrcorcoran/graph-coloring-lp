@@ -6,6 +6,7 @@ from pulp import *
 NMAX = 7
 mstar = 3
 gamma = 25.597784
+output_H = False
 
 p_vars = [
     LpVariable(f"p{i}", lowBound=1 if i == 1 else 0, upBound=1)
@@ -183,6 +184,8 @@ def constraints_11(av, bv):
             )
             lamb = case_to_lambda((A, B, av, bv))
 
+    if output_H:
+        print(f'{A}, {B}, {av}, {bv}, H - {(1 + value(H)) / length}')
     # only constrain the tightest
     constraints.append(1 + H - (lamb * length) <= 0)
     return constraints
@@ -255,3 +258,6 @@ if __name__ == "__main__":
     prob.solve()
     for v in prob.variables():
         print(v.name, "=", v.varValue)
+    output_H = True
+    hamming_constraints()
+
