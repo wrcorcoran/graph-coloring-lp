@@ -114,7 +114,7 @@ def case_to_lambda(case):
             is_good = True
 
         # there exists >= 1 singly blocked config
-        if abs(av[i] - bv[i]) >= 1 and min(av[i], bv[i]) == 1:
+        if abs(av[i] - bv[i]) == 1 and min(av[i], bv[i]) == 1:
             is_bad = True
 
     if not (is_good or is_bad): 
@@ -250,9 +250,10 @@ def constraints_11(av, bv):
             )
             lamb = case_to_lambda((A, B, av, bv))
 
-    # only constrain the tightest
     if output_H:
         print(f'{A}, {B}, {av}, {bv}, H - {(1 + value(H)) / length}')
+
+    # only constrain the tightest
     constraints.append(1 + H - (lamb * length) <= 0)
     return constraints
 
@@ -349,7 +350,7 @@ def objective(params):
 
 if __name__ == "__main__":
     # 1.8322602
-    initial_guess = [1.8322578, 0.30955575]
+    initial_guess = [1.8325937, 0.30994069]
     result = minimize(objective, initial_guess, method='Nelder-Mead')
     print("Optimized parameters:", result.x)
     print("Minimum value:", result.fun)

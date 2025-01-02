@@ -258,6 +258,6 @@ if __name__ == "__main__":
     prob.solve()
     for v in prob.variables():
         print(v.name, "=", v.varValue)
-    output_H = True
-    hamming_constraints()
+    # output_H = True
+    # hamming_constraints()
 
