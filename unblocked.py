@@ -1,14 +1,19 @@
-from itertools import chain, combinations_with_replacement, product
+from itertools import chain, combinations_with_replacement, product, zip_longest
 from pulp import *
 from scipy.optimize import minimize
+from levels import solve_layers
 
 # DISCLAIMER: THIS CODE ONLY WORKS FOR mstar = 3
 
 
 NMAX = 7
 mstar = 3
-d = 1e15
-n = 1e20
+d = 1e3
+n = 1e7
+
+layers = None
+g_bad = None
+g_good = None
 
 output_H = False
 
@@ -26,16 +31,12 @@ output_H = False
 # c_gamma = 10000
 
 p_vars = [
-    LpVariable(f"p{i}", lowBound=1 if i == 1 else 0, upBound=1/i)
+    LpVariable(f"p{i}", lowBound=1 if i == 1 else 0, upBound=1 / i)
     for i in range(1, NMAX + 1)
 ]
 lambdas = {
     key: LpVariable(f"lambda_{key}", lowBound=1, upBound=2)
-    for key in [
-        "bad", 
-        "other", 
-        "good"
-    ]
+    for key in ["bad", "other", "good"]
 }
 lambda_obj = LpVariable("lambda_obj", lowBound=1, upBound=2)
 
@@ -83,11 +84,12 @@ def build_pair_vecs(length):
 #         A == 7 and B == 3 and av == (3, 3) and bv == (1, 1)
 #     ):
 #         return lambdas["bad"]
-    
+
 #     # if len(av) == 1:
 #     #     print(case)
 
 #     return lambdas["other"] if len(av) == 1 else lambdas["good"]
+
 
 def case_to_lambda(case):
     A, B, av, bv = case
@@ -100,7 +102,7 @@ def case_to_lambda(case):
     # if all(av[i] == 1 for i in range(len(av))) and all(bv[i] == 1 for i in range(len(bv))) and len(av) == len(bv):
     #     is_good = True
 
-    # # >= singly blocked if 
+    # # >= singly blocked if
     # # if at any point in av or bv, one of these is 1
     # # and it has a nonzero difference
     # for i in range(len(av)):
@@ -117,10 +119,10 @@ def case_to_lambda(case):
         if abs(av[i] - bv[i]) == 1 and min(av[i], bv[i]) == 1:
             is_bad = True
 
-    if not (is_good or is_bad): 
+    if not (is_good or is_bad):
         # print("Other: ", A, B, av, bv)
-        return lambdas['other']
-    
+        return lambdas["other"]
+
     # if is_good:
     #     # print("Good: ", A, B, av, bv)
     #     pass
@@ -128,13 +130,16 @@ def case_to_lambda(case):
     # if is_bad:
     #     print("Bad: ", A, B, av, bv)
 
-    return lambdas["good"] if is_good else lambdas['bad']
+    return lambdas["good"] if is_good else lambdas["bad"]
+
 
 def setup(c_gamma, k_goal, p2_goal):
     prob = LpProblem("Chen_et_al_Variable-Length_Coupling", LpMinimize)
     lambda_obj = LpVariable("lambda_obj", lowBound=1, upBound=2)
     prob += lambda_obj, "Objective: Minize LambdaObj"
-    prob += lambda_obj - k_goal >= 0 # i'm not sure if this is right, this is how they write it in their paper
+    prob += (
+        lambda_obj - k_goal >= 0
+    )  # i'm not sure if this is right, this is how they write it in their paper
     prob += lambda_obj - lambdas["other"] >= 0, "LP 4, Page 16, l_obj >= l_other"
     prob += lambda_obj - lambdas["good"] >= 0, "LP 4, Page 16, l_obj >= l_good"
     prob += (
@@ -163,14 +168,16 @@ min_memo = {}
 min_consts = []
 min_vars = []
 
+
 def min_var(l):
     if len(l) == 4:
         a, A, b, B = l
         if a > b:
             a, A, b, B = b, B, a, A
-        
+
         l = (a, A, b, B)
-        if l in min_memo: return min_memo[l]
+        if l in min_memo:
+            return min_memo[l]
 
         if A >= B:
             min_memo[l] = p(b) - p(B)
@@ -179,7 +186,7 @@ def min_var(l):
         elif B >= NMAX + 1:
             min_memo[l] = min_var((b, a, B))
         else:
-            new_var = LpVariable(f'min-{a}-{A}-{b}-{B}', lowBound=0, upBound=1)
+            new_var = LpVariable(f"min-{a}-{A}-{b}-{B}", lowBound=0, upBound=1)
             min_memo[l] = new_var
             min_consts.append(p(a) - p(A) - min_memo[l] >= 0)
             min_consts.append(p(b) - p(B) - min_memo[l] >= 0)
@@ -187,14 +194,15 @@ def min_var(l):
     else:
         b, a, A = l
 
-        if l in min_memo: return min_memo[l]
+        if l in min_memo:
+            return min_memo[l]
 
         if a >= b:
             min_memo[l] = p(b)
         elif A >= NMAX + 1:
             min_memo[l] = p(a)
         else:
-            new_var = LpVariable(f'min-{b}-{a}-{A}', lowBound=0, upBound=1)
+            new_var = LpVariable(f"min-{b}-{a}-{A}", lowBound=0, upBound=1)
             min_memo[l] = new_var
             min_consts.append(p(b) - min_memo[l] >= 0)
             min_consts.append(p(a) - p(A) - min_memo[l] >= 0)
@@ -218,12 +226,11 @@ def f(A, B, av, bv, i, imax, jmax):
             min_qi_qi_p = min_var((av[i], A, bv[i], B))
         else:
             min_qi_qi_p = min_var((bv[i], av[i], A))
-    else: # i == 1
+    else:  # i == 1
         if imax == jmax:
-            min_qi_qi_p = p(max(av[i], bv[i])) 
+            min_qi_qi_p = p(max(av[i], bv[i]))
         else:
             min_qi_qi_p = min_var((av[i], bv[i], B))
-
 
     return av[i] * qi + bv[i] * qi_p - min_qi_qi_p
 
@@ -251,7 +258,7 @@ def constraints_11(av, bv):
             lamb = case_to_lambda((A, B, av, bv))
 
     if output_H:
-        print(f'{A}, {B}, {av}, {bv}, H - {(1 + value(H)) / length}')
+        print(f"{A}, {B}, {av}, {bv}, H - {(1 + value(H)) / length}")
 
     # only constrain the tightest
     constraints.append(1 + H - (lamb * length) <= 0)
@@ -312,19 +319,60 @@ def add_constraints(prob):
             continue
         prob += c
 
-def solve(_k_goal, _p2_goal, is_final = False):
+
+def solve(
+    _k_goal, _p2_goal, is_final=False
+):
     k_goal, p2_goal = _k_goal * d, _p2_goal
     c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
-    gamma = ((k_goal + (1 + 2 * p2_goal) * d - 2) * (k_goal + 2 * p2_goal * d)) / ((k_goal - d - 2) * (k_goal - d - 2))
-    print(c, gamma)
-    c_gamma= c * gamma
+    gamma = None
+    if not layers:
+        gamma = ((k_goal + (1 + 2 * p2_goal) * d - 2) * (k_goal + 2 * p2_goal * d)) / (
+            (k_goal - d - 2) * (k_goal - d - 2)
+        )
+    else:
+        bad, good = g_bad, g_good
+        # bad, good = 0, 1
+        pbad, pgood = (bad) / (bad + good), (good) / (bad + good)
+        # bad_mult = (k_goal - d - 2) * (k_goal - d - 2) / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))
+        # good_mult = (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
+        # pbad, pgood = (good_mult) / (bad_mult + good_mult), (bad_mult) / (bad_mult + good_mult)
+
+        gamma = ((k_goal + 2 * p2_goal * d) / (n * k_goal)) * (
+            1
+            / (
+                pbad
+                * (k_goal - d - 2)
+                * (k_goal - d - 2)
+                / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))  # bad
+                + (pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)) # good
+            )
+        )  
+
+        print(f"BAD: {pbad}, GOOD: {pgood}, Eval: {gamma}")
+    print(f"C: {c}, γ: {gamma}")
+    c_gamma = c * gamma
     prob = setup(c_gamma, _k_goal, _p2_goal)
     add_constraints(prob)
 
     # prob.writeLP("ChenLP.lp")
     solver = pulp.PULP_CBC_CMD(msg=False)
     prob.solve(solver)
-    impt_vars = set(['lambda_bad', 'lambda_good', 'lambda_obj', 'lambda_other', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'])
+    impt_vars = set(
+        [
+            "lambda_bad",
+            "lambda_good",
+            "lambda_obj",
+            "lambda_other",
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6",
+            "p7",
+        ]
+    )
     # print(f'LP for ')
     if is_final:
         for v in prob.variables():
@@ -333,27 +381,47 @@ def solve(_k_goal, _p2_goal, is_final = False):
         global output_H
         output_H = True
         hamming_constraints()
-    val = prob.variablesDict()['lambda_obj'].varValue
+    val = prob.variablesDict()["lambda_obj"].varValue
 
-    if prob.status != 1: return float('inf')
+    if prob.status != 1:
+        return float("inf")
     del prob
     return val
 
+
 def objective(params):
-    print(params)
     param1, param2 = params
-    if param1 > 11/6 or param1 < 1.6:
-        return float('inf')
-    if param2 > 1/3 or param2 <= 0: 
-        return float('inf')
+    if param1 > 11 / 6 or param1 < 1.6:
+        return float("inf")
+    if param2 > 1 / 3 or param2 <= 0:
+        return float("inf")
+    print(f"Trying: Lambda - {param1}, P2 - {param2}")
     return solve(param1, param2)
 
+
 if __name__ == "__main__":
+    # global g_bad, g_good, layers
     # 1.8322602
-    initial_guess = [1.8325937, 0.30994069]
-    result = minimize(objective, initial_guess, method='Nelder-Mead')
-    print("Optimized parameters:", result.x)
-    print("Minimum value:", result.fun)
-    final = tuple(result.x)
-    solve(final[0], final[1], True)
+    layers = True
+    # with layers
+    if layers:
+        pbad, pgood = solve_layers(10)
+        # pbad, pgood = solve_layers(10)
+        g_bad, g_good = pbad, pgood
+        initial_guess = [1.8287944, 0.31211749]
+
+        result = minimize(objective, initial_guess, method="Nelder-Mead")
+        print("Optimized parameters:", result.x)
+        print("Minimum value:", result.fun)
+        final = tuple(result.x)
+        solve(final[0], final[1], is_final=True)
+
+    else:
+    # # without layers
+        initial_guess = [1.8325937, 0.30994069]
+        result = minimize(objective, initial_guess, method="Nelder-Mead")
+        print("Optimized parameters:", result.x)
+        print("Minimum value:", result.fun)
+        final = tuple(result.x)
+        solve(final[0], final[1], is_final=True)
     # solve(initial_guess[0], initial_guess[1], True)
