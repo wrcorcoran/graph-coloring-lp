@@ -2,18 +2,20 @@ from itertools import chain, combinations_with_replacement, product, zip_longest
 from pulp import *
 from scipy.optimize import minimize
 from levels import solve_layers
+import matplotlib.pyplot as plt
 
 # DISCLAIMER: THIS CODE ONLY WORKS FOR mstar = 3
 
 
 NMAX = 7
 mstar = 3
-d = 1e3
-n = 1e7
+d = 5e2
+n = 12 * d
 
 layers = None
 g_bad = None
 g_good = None
+num_layers = None
 
 output_H = False
 
@@ -133,10 +135,10 @@ def case_to_lambda(case):
     return lambdas["good"] if is_good else lambdas["bad"]
 
 
-def setup(c_gamma, k_goal, p2_goal):
+def setup(c_gamma, k_goal, p2_goal, p3_goal):
     prob = LpProblem("Chen_et_al_Variable-Length_Coupling", LpMinimize)
     lambda_obj = LpVariable("lambda_obj", lowBound=1, upBound=2)
-    prob += lambda_obj, "Objective: Minize LambdaObj"
+    prob += lambda_obj
     prob += (
         lambda_obj - k_goal >= 0
     )  # i'm not sure if this is right, this is how they write it in their paper
@@ -150,6 +152,7 @@ def setup(c_gamma, k_goal, p2_goal):
         "LP 4, Page 16, c_gamma Mixed Coupling Final Constraints",
     )
     prob += p(2) - p2_goal <= 0
+    prob += p(3) - p3_goal <= 0
 
     return prob
 
@@ -320,9 +323,11 @@ def add_constraints(prob):
         prob += c
 
 
-def solve(
-    _k_goal, _p2_goal, is_final=False
-):
+def solve(_k_goal, _p2_goal, _p3_goal, is_final=False):
+    global g_bad, g_good
+    pbad, pgood = solve_layers(num_layers, _k_goal, _p2_goal, _p3_goal)
+    # pbad, pgood = solve_layers(10)
+    g_bad, g_good = pbad, pgood
     k_goal, p2_goal = _k_goal * d, _p2_goal
     c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
     gamma = None
@@ -345,18 +350,21 @@ def solve(
                 * (k_goal - d - 2)
                 * (k_goal - d - 2)
                 / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))  # bad
-                + (pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)) # good
+                + (
+                    pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
+                )  # good
             )
-        )  
+        )
 
-        print(f"BAD: {pbad}, GOOD: {pgood}, Eval: {gamma}")
-    print(f"C: {c}, γ: {gamma}")
+        # print(f"BAD: {pbad}, GOOD: {pgood}, Eval: {gamma}")
+    # print(f"C: {c}, γ: {gamma}")
     c_gamma = c * gamma
-    prob = setup(c_gamma, _k_goal, _p2_goal)
+    prob = setup(c_gamma, _k_goal, _p2_goal, _p3_goal)
     add_constraints(prob)
 
     # prob.writeLP("ChenLP.lp")
-    solver = pulp.PULP_CBC_CMD(msg=False)
+    # solver = pulp.PULP_CBC_CMD(msg=False)
+    solver = GUROBI_CMD(msg=False, warmStart=True)
     prob.solve(solver)
     impt_vars = set(
         [
@@ -378,9 +386,9 @@ def solve(
         for v in prob.variables():
             if v.name in impt_vars:
                 print(v.name, "=", v.varValue)
-        global output_H
-        output_H = True
-        hamming_constraints()
+        # global output_H
+        # output_H = True
+        # hamming_constraints()
     val = prob.variablesDict()["lambda_obj"].varValue
 
     if prob.status != 1:
@@ -390,13 +398,19 @@ def solve(
 
 
 def objective(params):
-    param1, param2 = params
+    param1, param2, param3 = params
     if param1 > 11 / 6 or param1 < 1.6:
         return float("inf")
     if param2 > 1 / 3 or param2 <= 0:
         return float("inf")
-    print(f"Trying: Lambda - {param1}, P2 - {param2}")
-    return solve(param1, param2)
+    if param3 > 1 / 4 or param3 <= 0:
+        return float("inf")
+    print(f"Trying: Lambda - {param1}, P2 - {param2}, P3 - {param3}")
+    try:
+        res = solve(param1, param2, param3)
+        return res
+    except Exception as e:
+        return float("inf")
 
 
 if __name__ == "__main__":
@@ -405,23 +419,43 @@ if __name__ == "__main__":
     layers = True
     # with layers
     if layers:
-        pbad, pgood = solve_layers(10)
-        # pbad, pgood = solve_layers(10)
-        g_bad, g_good = pbad, pgood
-        initial_guess = [1.8287944, 0.31211749]
+        results = []
+        for i in range(1, 72, 5):
+            print(f"Testing {i}")
+            num_layers = i
+            initial_guess = [1.8242894, 0.32009043, 0.16004522]
 
-        result = minimize(objective, initial_guess, method="Nelder-Mead")
-        print("Optimized parameters:", result.x)
-        print("Minimum value:", result.fun)
-        final = tuple(result.x)
-        solve(final[0], final[1], is_final=True)
+            result = minimize(objective, initial_guess, method="Nelder-Mead", options={'maxiter': 50})
+            print("Optimized parameters:", result.x)
+            print("Minimum value:", result.fun)
+            final = tuple(result.x)
+            if result.fun == float('inf'):
+                continue
+            solve(final[0], final[1], final[2], is_final=True)
+            results.append((i, final[0]))
+
+        x_values, y_values = zip(*results)
+        plt.plot(x_values, y_values)
+        plt.xlabel("# of Layers")
+        plt.ylabel("Lambda")
+        plt.show()
+
+        # num_layers = int(d)
+        # initial_guess = [1.8242894, 0.32009043, 0.16004522]
+
+        # result = minimize(objective, initial_guess, method="Nelder-Mead", options={'maxiter': 50})
+        # print("Optimized parameters:", result.x)
+        # print("Minimum value:", result.fun)
+        # final = tuple(result.x)
+        # solve(final[0], final[1], final[2], is_final=True)
+        
 
     else:
-    # # without layers
-        initial_guess = [1.8325937, 0.30994069]
+        # # without layers
+        initial_guess = [1.8325937, 0.30994069, 0.16629646]
         result = minimize(objective, initial_guess, method="Nelder-Mead")
         print("Optimized parameters:", result.x)
         print("Minimum value:", result.fun)
         final = tuple(result.x)
-        solve(final[0], final[1], is_final=True)
+        solve(final[0], final[1], final[2], is_final=True)
     # solve(initial_guess[0], initial_guess[1], True)
