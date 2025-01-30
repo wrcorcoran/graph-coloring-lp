@@ -15,6 +15,7 @@ n = 12 * d
 layers = None
 g_bad = None
 g_good = None
+g_goodend = None
 num_layers = None
 
 output_H = False
@@ -324,10 +325,10 @@ def add_constraints(prob):
 
 
 def solve(_k_goal, _p2_goal, _p3_goal, is_final=False):
-    global g_bad, g_good
-    pbad, pgood = solve_layers(num_layers, _k_goal, _p2_goal, _p3_goal)
+    global g_bad, g_good, g_goodend
+    pbad, pgood, pgoodend = solve_layers(num_layers, _k_goal, _p2_goal, _p3_goal)
     # pbad, pgood = solve_layers(10)
-    g_bad, g_good = pbad, pgood
+    g_bad, g_good, g_goodend = pbad, pgood, pgoodend
     k_goal, p2_goal = _k_goal * d, _p2_goal
     c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
     gamma = None
@@ -336,25 +337,34 @@ def solve(_k_goal, _p2_goal, _p3_goal, is_final=False):
             (k_goal - d - 2) * (k_goal - d - 2)
         )
     else:
-        bad, good = g_bad, g_good
-        # bad, good = 0, 1
-        pbad, pgood = (bad) / (bad + good), (good) / (bad + good)
-        # bad_mult = (k_goal - d - 2) * (k_goal - d - 2) / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))
-        # good_mult = (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
-        # pbad, pgood = (good_mult) / (bad_mult + good_mult), (bad_mult) / (bad_mult + good_mult)
+        gamma = ((k_goal + 2 * p2_goal * d) / (n * k_goal)) * (1 / (
+            g_goodend
+            + g_good * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
+            + (1 - g_good)
+            * ((k_goal - d - 2)
+            / (k_goal + d * (1 + 2 * p2_goal) - 2))
+            * ((k_goal - d - 2)
+            / (n * k_goal))
+        ))
+        # bad, good = g_bad, g_good
+        # # bad, good = 0, 1
+        # pbad, pgood = (bad) / (bad + good), (good) / (bad + good)
+        # # bad_mult = (k_goal - d - 2) * (k_goal - d - 2) / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))
+        # # good_mult = (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
+        # # pbad, pgood = (good_mult) / (bad_mult + good_mult), (bad_mult) / (bad_mult + good_mult)
 
-        gamma = ((k_goal + 2 * p2_goal * d) / (n * k_goal)) * (
-            1
-            / (
-                pbad
-                * (k_goal - d - 2)
-                * (k_goal - d - 2)
-                / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))  # bad
-                + (
-                    pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
-                )  # good
-            )
-        )
+        # gamma = ((k_goal + 2 * p2_goal * d) / (n * k_goal)) * (
+        #     1
+        #     / (
+        #         pbad
+        #         * (k_goal - d - 2)
+        #         * (k_goal - d - 2)
+        #         / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))  # bad
+        #         + (
+        #             pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
+        #         )  # good
+        #     )
+        # )
 
         # print(f"BAD: {pbad}, GOOD: {pgood}, Eval: {gamma}")
     # print(f"C: {c}, γ: {gamma}")
@@ -420,16 +430,18 @@ if __name__ == "__main__":
     # with layers
     if layers:
         results = []
-        for i in range(70, 71, 1):
+        for i in range(70, 1001, 1):
             print(f"Testing {i}")
             num_layers = i
             initial_guess = [1.8242894, 0.32009043, 0.16004522]
 
-            result = minimize(objective, initial_guess, method="Nelder-Mead", options={'maxiter': 50})
+            result = minimize(
+                objective, initial_guess, method="Nelder-Mead", options={"maxiter": 50}
+            )
             print("Optimized parameters:", result.x)
             print("Minimum value:", result.fun)
             final = tuple(result.x)
-            if result.fun == float('inf'):
+            if result.fun == float("inf"):
                 continue
             solve(final[0], final[1], final[2], is_final=True)
             results.append((i, final[0]))
@@ -448,7 +460,6 @@ if __name__ == "__main__":
         # print("Minimum value:", result.fun)
         # final = tuple(result.x)
         # solve(final[0], final[1], final[2], is_final=True)
-        
 
     else:
         # # without layers

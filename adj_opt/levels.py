@@ -143,6 +143,10 @@ prob_vars = {
 
 def initial_constraints(prob):
     prob += sum(prob_vars[__name(0, state)] for state in states) == 1
+    prob += prob_vars[__name(0, "BADEND")] == 0
+    prob += prob_vars[__name(0, "OTHEREND")] == 0
+    prob += prob_vars[__name(0, "GOODEND")] == 0
+    # prob += prob_vars[__name(0, "OTHER")] == 0 # seems too restrictive...
 
 
 def add_layers(prob, l):
@@ -214,20 +218,21 @@ def get_probs(prob, layers, _print=False):
         for v in prob.variables():
             if v.name in impt_vars:
                 print(v.name, "=", v.varValue)
-    bad, good = (
+    bad, good, goodend = (
         prob.variablesDict()[__name(layers, "BAD")].varValue,
         prob.variablesDict()[__name(layers, "GOOD")].varValue,
+        prob.variablesDict()[__name(layers, "GOODEND")].varValue,
     )
 
     if prob.status != 1:
         print(LpStatus[prob.status])
         return float("inf"), float("inf")
 
-    return bad, good
+    return bad, good, goodend
 
 
 def solve_layers_bad(layers):
-    prob = LpProblem("LayerByLayer", LpMaximize)
+    prob = LpProblem("LayerByLayer", LpMinimize)
     z_final = LpVariable("z_final", lowBound=0, upBound=1)
     prob += z_final
 
@@ -236,12 +241,17 @@ def solve_layers_bad(layers):
     for l in range(1, layers + 1):
         add_layers(prob, l)
 
-    # z = p(bad) / p(good), z * p(good) <= p(bad)
-    prob += z_final <= prob_vars[__name(layers, "BAD")]
+    a = (k - d - 2) / (k + d * (1 + 2 * p2) - 2)
+    b = (k - d - 2) / (n * k)
+
+    prob += prob_vars[__name(l, "BAD")] != 0
+    prob += prob_vars[__name(l, "GOOD")] != 0
+    prob += prob_vars[__name(l, "GOODEND")] != 0
+    prob += z_final >= prob_vars[__name(layers, "GOODEND")] +  prob_vars[__name(layers, "GOOD")] * a + (1 - prob_vars[__name(layers, "GOOD")]) * a * b
 
     prob.solve(solver)
 
-    return get_probs(prob, layers, False)
+    return get_probs(prob, layers, True)
 
 
 def solve_layers_good(layers, bad):
@@ -268,9 +278,9 @@ def solve_layers_good(layers, bad):
 def solve_layers(layers, _lamb=1.8287944, _p2=0.31211749, _p3=0.16439719):
     global p2, p3, lamb
     p2, p3, lamb = _p2, _p3, _lamb
-    bad, _ = solve_layers_bad(layers)
-    bad, good = solve_layers_good(layers, bad)
-    return bad, good
+    bad, good, goodend = solve_layers_bad(layers)
+    # bad, good = solve_layers_good(layers, bad)
+    return bad, good, goodend
 
 
 if __name__ == "__main__":
@@ -279,8 +289,8 @@ if __name__ == "__main__":
     print(lowers)
     print()
 
-    bad, good = solve_layers(67)
+    bad, good, goodend = solve_layers(67)
 
-    print(bad, good)
+    print(bad, good, goodend)
 
-    print(f"RESULTS: Bad - {bad}, Good - {good}")
+    print(f"RESULTS: Bad - {bad}, Good - {good}, Good - {goodend}")

@@ -1,0 +1,77 @@
+
+Gurobi 12.0.0 (mac64[rosetta2], gurobi_cl) logging started Wed Jan 29 12:20:44 2025
+
+Set parameter Username
+Set parameter LicenseID to value 2607225
+Set parameter LogFile to value "gurobi.log"
+Using license file /Users/willcorcoran__/gurobi.lic
+Academic license - for non-commercial use only - expires 2026-01-07
+
+Gurobi Optimizer version 12.0.0 build v12.0.0rc1 (mac64[rosetta2] - Darwin 24.2.0 24C101)
+Copyright (c) 2024, Gurobi Optimization, LLC
+
+Read LP format model from file /var/folders/0z/fbvp30yd2rqglt77ftznhyp80000gn/T/29e62d403d204201b810cef4fdf75fd6-pulp.lp
+Reading time = 0.03 seconds
+OBJ: 13005 rows, 6008 columns, 43012 nonzeros
+
+Read MIP start from file /var/folders/0z/fbvp30yd2rqglt77ftznhyp80000gn/T/29e62d403d204201b810cef4fdf75fd6-pulp.mst
+Read input file '/var/folders/0z/fbvp30yd2rqglt77ftznhyp80000gn/T/29e62d403d204201b810cef4fdf75fd6-pulp.mst'
+
+
+Using Gurobi shared library /Library/gurobi1200/macos_universal2/lib/libgurobi120.dylib
+
+CPU model: Apple M1 Max
+Thread count: 10 physical cores, 10 logical processors, using up to 10 threads
+
+Optimize a model with 13005 rows, 6008 columns and 43012 nonzeros
+Model fingerprint: 0x190a4997
+Coefficient statistics:
+  Matrix range     [4e-05, 1e+00]
+  Objective range  [1e+00, 1e+00]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [2e-05, 1e+00]
+Presolve removed 1004 rows and 1006 columns
+Presolve time: 0.02s
+Presolved: 12001 rows, 5002 columns, 50989 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Presolve time: 0.05s
+Presolved: 5002 rows, 16234 columns, 55222 nonzeros
+
+Ordering time: 0.00s
+
+Barrier statistics:
+ AA' NZ     : 3.100e+04
+ Factor NZ  : 6.741e+04 (roughly 9 MB of memory)
+ Factor Ops : 1.003e+06 (less than 1 second per iteration)
+ Threads    : 8
+
+                  Objective                Residual
+Iter       Primal          Dual         Primal    Dual     Compl     Time
+   0  -1.25867201e+02 -0.00000000e+00  1.00e-01 1.60e+01  5.04e+00     0s
+   1  -2.61967160e+01 -0.00000000e+00  2.97e-04 8.63e+00  8.51e-01     0s
+   2  -2.92988239e+00 -0.00000000e+00  2.01e-07 2.56e-01  3.19e-02     0s
+   3  -7.13139359e-01 -0.00000000e+00  1.69e-08 2.21e-02  3.96e-03     0s
+   4  -2.19272987e-01 -0.00000000e+00  4.07e-09 6.75e-03  1.16e-03     0s
+   5  -5.21986983e-02 -0.00000000e+00  7.64e-10 2.02e-03  2.88e-04     0s
+   6  -1.49327762e-02 -0.00000000e+00  1.86e-10 4.13e-04  7.14e-05     0s
+   7  -4.33878307e-03 -0.00000000e+00  4.94e-11 8.77e-05  1.87e-05     0s
+   8  -9.30914569e-04 -0.00000000e+00  8.32e-12 2.13e-14  3.11e-06     0s
+   9  -9.25650894e-06 -0.00000000e+00  5.30e-13 2.85e-08  3.08e-08     0s
+  10  -9.92286455e-09 -0.00000000e+00  3.87e-12 2.84e-14  3.30e-11     0s
+
+Barrier solved model in 10 iterations and 0.16 seconds (0.15 work units)
+Optimal objective -9.92286455e-09
+
+Crossover log...
+
+    4730 DPushes remaining with DInf 0.0000000e+00                 0s
+
+
+Stopped in 127 iterations and 0.21 seconds (0.25 work units)
+Solve interrupted
+
+Unable to retrieve attribute 'X'
+
