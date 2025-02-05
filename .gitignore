@@ -2,3 +2,4 @@ ts.txt
 __pycache__
 .DS_Store
 *.png
+gurobi.log

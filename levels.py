@@ -10,6 +10,7 @@ solver = GUROBI_CMD(msg=False, warmStart=True)
 # DISCLAIMER: CODE IS FUNCTIONALLY IMPLEMENTED
 NMAX = 7
 mstar = 3
+dc = mstar - 1
 d = 5e2
 lamb = 1.8287944
 # n = 1e5
@@ -26,27 +27,28 @@ d = float128(d)
 n = float128(n)
 p2 = float128(p2)
 p3 = float128(p3)
+dc = float128(dc)
 
 uppers = {
     "BAD": {
         "BAD": 1 - 2 * ((k - d - 2) / (n * k)),
-        "OTHER": (((d - 2) * (1 + p2))) / ((n * k)),
+        "OTHER": (((d - 2) * (1 + p2)) + p2) / ((n * k)),
         "GOOD": (k + (d * (p2 - 1)) - (p2 + 2)) / (n * k),
         "BADEND": (k + 2 * p2 * d) / (n * k),
         "OTHEREND": 0,
         "GOODEND": 0,
     },
     "OTHER": {
-        "BAD": 2 * d * (k - d - 2 + (p2 * (d - 1))) / (n * k),
+        "BAD": 2 * dc * (k - 3) / (n * k),
         "OTHER": 1 - (k - d - 2) / (n * k),
-        "GOOD": (3 * d * p3) / (n * k),
+        "GOOD": (3 * dc * (d - 1) * p3) / (n * k),
         "BADEND": 0,
         "OTHEREND": (k + 2 * p2 * d) / (n * k),
         "GOODEND": 0,
     },
     "GOOD": {
-        "BAD": (2 * d * (1 + p2)) / (n * k),
-        "OTHER": (d * (3 * p3 + 2 * p2)) / (n * k),
+        "BAD": (2 * d * (1 + p2) - p2) / (n * k),
+        "OTHER": ((d - 2) * (6 * p3 + 2 * p2)) / (n * k),
         "GOOD": 1 - (k - d - 2) / (n * k),
         "BADEND": 0,
         "OTHEREND": 0,
@@ -79,7 +81,7 @@ uppers = {
 }
 lowers = {
     "BAD": {
-        "BAD": 1 - ((2 * k + p2 * (4 * d - 3) - 4) / (n * k)),
+        "BAD": 1 - 2 * ((2 * (d * p2 - 1) + k - p2) / (n * k)),
         "OTHER": 0,
         "GOOD": (k - d - 2) / (n * k),
         "BADEND": (k - d - 2) / (n * k),
@@ -88,7 +90,7 @@ lowers = {
     },
     "OTHER": {
         "BAD": 0,
-        "OTHER": 1 - ((k + 2 * d * (k + d * (p2 - 1)) + (3 / 2) * p3) / (n * k)),
+        "OTHER": 1 - ((dc * (3 * p3 * (d - 1) + 2 * k - 6) + k + 2 * p2 * d) / (n * k)),
         "GOOD": 0,
         "BADEND": 0,
         "OTHEREND": (k - d - 2) / (n * k),
@@ -97,7 +99,7 @@ lowers = {
     "GOOD": {
         "BAD": 0,
         "OTHER": 0,
-        "GOOD": 1 - ((k + 2 * d * (1 + 2 * p2 + (3 / 2) * p3))) / (n * k),
+        "GOOD": 1 - (k + 2*d + p2 * (5 * d - 3) + p3 * (3 * d - 6)) / (n * k),
         "BADEND": 0,
         "OTHEREND": 0,
         "GOODEND": (k - d - 2) / (n * k),
@@ -279,7 +281,7 @@ if __name__ == "__main__":
     print(lowers)
     print()
 
-    bad, good = solve_layers(67)
+    bad, good = solve_layers(int(n))
 
     print(bad, good)
 
