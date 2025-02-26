@@ -1,17 +1,19 @@
-from itertools import chain, combinations_with_replacement, product, zip_longest
+from itertools import chain, combinations_with_replacement, product
+
+import matplotlib.pyplot as plt
+import numpy as np
+from levels_qp import solve_layers_extern
 from pulp import *
 from scipy.optimize import minimize
-from levels import solve_layers
-import matplotlib.pyplot as plt
 
 # DISCLAIMER: THIS CODE ONLY WORKS FOR mstar = 3
-
-
 NMAX = 7
 mstar = 3
 d = 5e2
 n = 12 * d
-# n = 1e10
+# n1 = 1e10
+n1 = n
+
 
 layers = None
 g_bad = None
@@ -19,19 +21,6 @@ g_good = None
 num_layers = None
 
 output_H = False
-
-# k_goal = 1.832 * d
-# p2_goal = 1/3
-# c = (k_goal + 2 * p2_goal * d) / (k_goal - d - 2)
-# gamma = ((6 * k_goal - d - 2) * (k_goal + 2 * p2_goal * d)) / (4 * (k_goal - d - 2) * (k_goal - d - 1))
-# gamma = ((k_goal + (1 + 2 * p2_goal) * d - 2) * (k_goal + 2 * p2_goal * d)) / ((k_goal - d - 2) ** 2)
-# gamma = (((n * k_goal) ** 2) * (k_goal + 2 * p2_goal * d)) / (((k_goal - d - 2) ** 2) * (n * k_goal - 2 * (1 + p2_goal) * d))
-# print(c, gamma)
-# c_gamma = 25.597784
-# c_gamma = c * gamma
-# print(c_gamma)
-# c_gamma = 1/1000000000000
-# c_gamma = 10000
 
 p_vars = [
     LpVariable(f"p{i}", lowBound=1 if i == 1 else 0, upBound=1 / i)
@@ -79,39 +68,10 @@ def build_pair_vecs(length):
 
     return pairs
 
-
-# def case_to_lambda(case):
-#     A, B, av, bv = case
-
-#     if (A == 3 and B == 7 and av == (1, 1) and bv == (3, 3)) or (
-#         A == 7 and B == 3 and av == (3, 3) and bv == (1, 1)
-#     ):
-#         return lambdas["bad"]
-
-#     # if len(av) == 1:
-#     #     print(case)
-
-#     return lambdas["other"] if len(av) == 1 else lambdas["good"]
-
-
 def case_to_lambda(case):
     A, B, av, bv = case
 
     is_good, is_bad = False, False
-
-    # all unblocked:
-    # dc = 1, av (1) bv (1)
-    # dc = 2, av (1, 1) bv (1, 1)
-    # if all(av[i] == 1 for i in range(len(av))) and all(bv[i] == 1 for i in range(len(bv))) and len(av) == len(bv):
-    #     is_good = True
-
-    # # >= singly blocked if
-    # # if at any point in av or bv, one of these is 1
-    # # and it has a nonzero difference
-    # for i in range(len(av)):
-    #     if abs(av[i] - bv[i]) >= 1:
-    #         # print(A, B, av, bv)
-    #         is_bad = True
 
     for i in range(len(av)):
         # there exists an unblocked config
@@ -123,15 +83,7 @@ def case_to_lambda(case):
             is_bad = True
 
     if not (is_good or is_bad):
-        # print("Other: ", A, B, av, bv)
         return lambdas["other"]
-
-    # if is_good:
-    #     # print("Good: ", A, B, av, bv)
-    #     pass
-
-    # if is_bad:
-    #     print("Bad: ", A, B, av, bv)
 
     return lambdas["good"] if is_good else lambdas["bad"]
 
@@ -141,7 +93,7 @@ def setup(c_gamma, k_goal, p2_goal, p3_goal):
     lambda_obj = LpVariable("lambda_obj", lowBound=1, upBound=2)
     prob += lambda_obj
     prob += (
-        lambda_obj - k_goal >= 0
+        lambda_obj - k_goal >= 0 # changing so can only be worse...? was <=
     )  # i'm not sure if this is right, this is how they write it in their paper
     prob += lambda_obj - lambdas["other"] >= 0, "LP 4, Page 16, l_obj >= l_other"
     prob += lambda_obj - lambdas["good"] >= 0, "LP 4, Page 16, l_obj >= l_good"
@@ -152,6 +104,8 @@ def setup(c_gamma, k_goal, p2_goal, p3_goal):
         >= 0,
         "LP 4, Page 16, c_gamma Mixed Coupling Final Constraints",
     )
+
+    # adding constraints based on optimization
     prob += p(2) - p2_goal <= 0
     prob += p(3) - p3_goal <= 0
 
@@ -288,8 +242,7 @@ def constraints_14():
         for b in range(a, NMAX + 1):
             constraints.append(a * p(a) + (b - 1) * p(b) - y <= 0)
     constraints.append(2 * x + mstar * y + 1 - lambdas["good"] * mstar <= 0)
-    # constraints.append(2 * x + mstar * y + 1 - lambdas["bad"] * mstar <= 0)
-    # constraints.append(2 * x + mstar * y + 1 - lambdas["other"] * mstar <= 0)
+
     return constraints
 
 
@@ -328,7 +281,8 @@ def add_constraints(prob):
 
 def solve(_k_goal, _p2_goal, _p3_goal, is_final=False):
     global g_bad, g_good
-    pbad, pgood = solve_layers(num_layers, _k_goal, _p2_goal, _p3_goal)
+    pbad, pbadend, pgood, pgoodend = solve_layers_extern(num_layers, _k_goal, _p2_goal, _p3_goal)
+    print(pbad, pbadend, pgood, pgoodend)
     # pbad, pgood = solve_layers(10)
     g_bad, g_good = pbad, pgood
     k_goal, p2_goal = _k_goal * d, _p2_goal
@@ -339,31 +293,22 @@ def solve(_k_goal, _p2_goal, _p3_goal, is_final=False):
             (k_goal - d - 2) * (k_goal - d - 2)
         )
     else:
-        bad, good = g_bad, g_good
-        # bad, good = 1, 0
-        pbad, pgood = (bad) / (bad + good), (good) / (bad + good)
-        # bad_mult = (k_goal - d - 2) * (k_goal - d - 2) / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))
-        # good_mult = (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
-        # pbad, pgood = (good_mult) / (bad_mult + good_mult), (bad_mult) / (bad_mult + good_mult)
+        terminate_lower = (k_goal - d - 2) / (n * k_goal)
+        beta = (pbad
+        * (k_goal - d - 2)
+        * (k_goal - d - 2)
+        / (n1 * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))  # bad
+        + (
+            pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2) # good
+        ))
+        alpha = pbadend / pgoodend if pgoodend != 0 else 0
+        gamma = np.power(1 - terminate_lower, num_layers) * (((k_goal + 2 * p2_goal * d) / (n1 * k_goal)) * (1 / beta) - alpha) + alpha
 
-        gamma = ((k_goal + 2 * p2_goal * d) / (n * k_goal)) * (
-            1
-            / (
-                pbad
-                * (k_goal - d - 2)
-                * (k_goal - d - 2)
-                / (n * k_goal * (k_goal + d * (1 + 2 * p2_goal) - 2))  # bad
-                + (
-                    pgood * (k_goal - d - 2) / (k_goal + d * (1 + 2 * p2_goal) - 2)
-                )  # good
-            )
-        )
-
-        # print(f"BAD: {pbad}, GOOD: {pgood}, Eval: {gamma}")
     print(f"C: {c}, γ: {gamma}")
     c_gamma = c * gamma
     prob = setup(c_gamma, _k_goal, _p2_goal, _p3_goal)
     add_constraints(prob)
+
 
     # prob.writeLP("ChenLP.lp")
     # solver = pulp.PULP_CBC_CMD(msg=False)
@@ -417,22 +362,20 @@ def objective(params):
 
 
 if __name__ == "__main__":
-    # global g_bad, g_good, layers
-    # 1.8322602
     layers = True
     # with layers
     if layers:
         results = []
-        for i in range(70, 71, 20):
+        for i in range(0, 251, 50):
             print(f"Testing {i}")
             num_layers = i
-            initial_guess = [1.8242894, 0.32009043, 0.16004522]
+            initial_guess = [1.8319311506873706, 0.31032505675007377, 0.16596557534368533]
 
             result = minimize(objective, initial_guess, method="Nelder-Mead")
             print("Optimized parameters:", result.x)
             print("Minimum value:", result.fun)
             final = tuple(result.x)
-            if result.fun == float('inf'):
+            if result.fun == float("inf"):
                 continue
             solve(final[0], final[1], final[2], is_final=True)
             results.append((i, final[0]))
@@ -443,16 +386,6 @@ if __name__ == "__main__":
         plt.ylabel("Lambda")
         plt.show()
 
-        # num_layers = int(d)
-        # initial_guess = [1.8242894, 0.32009043, 0.16004522]
-
-        # result = minimize(objective, initial_guess, method="Nelder-Mead", options={'maxiter': 50})
-        # print("Optimized parameters:", result.x)
-        # print("Minimum value:", result.fun)
-        # final = tuple(result.x)
-        # solve(final[0], final[1], final[2], is_final=True)
-        
-
     else:
         # # without layers
         initial_guess = [1.8325937, 0.30994069, 0.16629646]
@@ -461,4 +394,3 @@ if __name__ == "__main__":
         print("Minimum value:", result.fun)
         final = tuple(result.x)
         solve(final[0], final[1], final[2], is_final=True)
-    # solve(initial_guess[0], initial_guess[1], True)

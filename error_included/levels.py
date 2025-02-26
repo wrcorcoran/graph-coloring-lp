@@ -20,6 +20,7 @@ k = lamb * d
 p2 = 0.31211749
 # p3 = 0.16629646
 p3 = 0.16439719
+n1 = 1e10
 
 
 k = float128(k)
@@ -99,7 +100,7 @@ lowers = {
     "GOOD": {
         "BAD": 0,
         "OTHER": 0,
-        "GOOD": 1 - (k + 2*d + p2 * (5 * d - 3) + p3 * (3 * d - 6)) / (n * k),
+        "GOOD": 1 - (k + 2 * d + p2 * (5 * d - 3) + p3 * (3 * d - 6)) / (n * k),
         "BADEND": 0,
         "OTHEREND": 0,
         "GOODEND": (k - d - 2) / (n * k),
@@ -145,33 +146,41 @@ prob_vars = {
 
 def initial_constraints(prob):
     prob += sum(prob_vars[__name(0, state)] for state in states) == 1
+    prob += prob_vars[__name(0, "BADEND")] == 0
+    prob += prob_vars[__name(0, "GOODEND")] == 0
+    prob += prob_vars[__name(0, "OTHEREND")] == 0
+    prob += prob_vars[__name(0, "BAD")] == 1
 
 
 def add_layers(prob, l):
+    bad_lower = sum(lowers[s]["BAD"] * prob_vars[__name(l - 1, s)] for s in states)
     bad_upper = sum(uppers[s]["BAD"] * prob_vars[__name(l - 1, s)] for s in states)
+
+    good_lower = sum(lowers[s]["GOOD"] * prob_vars[__name(l - 1, s)] for s in states)
     good_upper = sum(uppers[s]["GOOD"] * prob_vars[__name(l - 1, s)] for s in states)
+
+    other_lower = sum(lowers[s]["OTHER"] * prob_vars[__name(l - 1, s)] for s in states)
     other_upper = sum(uppers[s]["OTHER"] * prob_vars[__name(l - 1, s)] for s in states)
+
+    bad_end_lower = sum(
+        lowers[s]["BADEND"] * prob_vars[__name(l - 1, s)] for s in states
+    )
     bad_end_upper = sum(
         uppers[s]["BADEND"] * prob_vars[__name(l - 1, s)] for s in states
+    )
+
+    good_end_lower = sum(
+        lowers[s]["GOODEND"] * prob_vars[__name(l - 1, s)] for s in states
     )
     good_end_upper = sum(
         uppers[s]["GOODEND"] * prob_vars[__name(l - 1, s)] for s in states
     )
-    other_end_upper = sum(
-        uppers[s]["OTHEREND"] * prob_vars[__name(l - 1, s)] for s in states
-    )
 
-    bad_lower = sum(lowers[s]["BAD"] * prob_vars[__name(l - 1, s)] for s in states)
-    good_lower = sum(lowers[s]["GOOD"] * prob_vars[__name(l - 1, s)] for s in states)
-    other_lower = sum(lowers[s]["OTHER"] * prob_vars[__name(l - 1, s)] for s in states)
-    bad_end_lower = sum(
-        lowers[s]["BADEND"] * prob_vars[__name(l - 1, s)] for s in states
-    )
-    good_end_lower = sum(
-        lowers[s]["GOODEND"] * prob_vars[__name(l - 1, s)] for s in states
-    )
     other_end_lower = sum(
         lowers[s]["OTHEREND"] * prob_vars[__name(l - 1, s)] for s in states
+    )
+    other_end_upper = sum(
+        uppers[s]["OTHEREND"] * prob_vars[__name(l - 1, s)] for s in states
     )
 
     p_bad = LpVariable(__name(l, "BAD"), lowBound=0, upBound=1)
@@ -182,16 +191,22 @@ def add_layers(prob, l):
     p_other_end = LpVariable(__name(l, "OTHEREND"), lowBound=0, upBound=1)
 
     prob += p_bad + p_good + p_other + p_bad_end + p_good_end + p_other_end == 1
+
     prob += p_bad <= bad_upper
     prob += p_bad >= bad_lower
+
     prob += p_good <= good_upper
     prob += p_good >= good_lower
+
     prob += p_other <= other_upper
     prob += p_other >= other_lower
+
     prob += p_bad_end <= bad_end_upper
     prob += p_bad_end >= bad_end_lower
+
     prob += p_good_end <= good_end_upper
     prob += p_good_end >= good_end_lower
+
     prob += p_other_end <= other_end_upper
     prob += p_other_end >= other_end_lower
 
@@ -208,6 +223,7 @@ def get_probs(prob, layers, _print=False):
         impt_vars = set(
             [
                 "bad_final",
+                "z_final",
                 *[__name(0, s) for s in states],
                 *[__name(layers, s) for s in states],
             ]
@@ -216,19 +232,20 @@ def get_probs(prob, layers, _print=False):
         for v in prob.variables():
             if v.name in impt_vars:
                 print(v.name, "=", v.varValue)
-    bad, good = (
+    bad, good, goodend = (
         prob.variablesDict()[__name(layers, "BAD")].varValue,
         prob.variablesDict()[__name(layers, "GOOD")].varValue,
+        prob.variablesDict()[__name(layers, "GOODEND")].varValue,
     )
 
     if prob.status != 1:
         print(LpStatus[prob.status])
         return float("inf"), float("inf")
 
-    return bad, good
+    return bad, good, goodend
 
 
-def solve_layers_bad(layers):
+def solve_layers_all(layers):
     prob = LpProblem("LayerByLayer", LpMaximize)
     z_final = LpVariable("z_final", lowBound=0, upBound=1)
     prob += z_final
@@ -239,29 +256,17 @@ def solve_layers_bad(layers):
         add_layers(prob, l)
 
     # z = p(bad) / p(good), z * p(good) <= p(bad)
-    prob += z_final <= prob_vars[__name(layers, "BAD")]
+    # prob += z_final >= prob_vars[__name(layers, "BAD")] * (k - d - 2) * (k - d - 2) / (
+    #     n1 * k * (k + d * (1 + 2 * p2) - 2)
+    # )  # bad
+    # +(
+    #     prob_vars[__name(layers, "GOOD")] * (k - d - 2) / (k + d * (1 + 2 * p2) - 2)
+    # )  # good
+    # +prob_vars[__name(layers, "GOODEND")]  # good end
+    # prob += 1 / prob_vars[__name(0, "BAD")] >= 0
 
-    prob.solve(solver)
+    prob += z_final >= prob_vars[__name(layers, "BAD")]
 
-    return get_probs(prob, layers, False)
-
-
-def solve_layers_good(layers, bad):
-    prob = LpProblem("LayerByLayer", LpMinimize)
-    z_final = LpVariable("z_final", lowBound=0, upBound=1)
-    prob += z_final
-
-    initial_constraints(prob)
-
-    for l in range(1, layers + 1):
-        add_layers(prob, l)
-
-    # # z = p(bad) / p(good), z * p(good) <= p(bad)
-    epsilon = 1e-5
-    prob += prob_vars[__name(layers, "BAD")] >= bad - epsilon
-    prob += z_final >= prob_vars[__name(layers, "GOOD")]
-
-    prob.writeLP("levels.lp")
     prob.solve(solver)
 
     return get_probs(prob, layers, True)
@@ -270,9 +275,8 @@ def solve_layers_good(layers, bad):
 def solve_layers(layers, _lamb=1.8287944, _p2=0.31211749, _p3=0.16439719):
     global p2, p3, lamb
     p2, p3, lamb = _p2, _p3, _lamb
-    bad, _ = solve_layers_bad(layers)
-    bad, good = solve_layers_good(layers, bad)
-    return bad, good
+    bad, good, goodend = solve_layers_all(layers)
+    return bad, good, goodend
 
 
 if __name__ == "__main__":
@@ -281,8 +285,8 @@ if __name__ == "__main__":
     print(lowers)
     print()
 
-    bad, good = solve_layers(100)
+    bad, good, goodend = solve_layers(10)
 
-    print(bad, good)
+    print(bad, good, goodend)
 
-    print(f"RESULTS: Bad - {bad}, Good - {good}")
+    print(f"RESULTS: Bad - {bad}, Good - {good}, GoodEnd - {goodend}")

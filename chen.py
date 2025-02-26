@@ -2,6 +2,8 @@ from itertools import chain, combinations_with_replacement, product
 from pulp import *
 
 # DISCLAIMER: THIS CODE ONLY WORKS FOR mstar = 3
+# solver = GUROBI_CMD(msg=False, warmStart=True)
+solver = PULP_CBC_CMD(msg=False, options=["feasibilitypump"])
 
 NMAX = 7
 mstar = 3
@@ -255,7 +257,7 @@ if __name__ == "__main__":
     # print("\n" * 5)
 
     prob.writeLP("ChenLP.lp")
-    prob.solve()
+    prob.solve(solver)
     for v in prob.variables():
         print(v.name, "=", v.varValue)
     # output_H = True

@@ -3,7 +3,7 @@ Minimize
 Objective:_Minize_LambdaObj: lambda_obj
 Subject To
 LP_4,_Page_16,_Gamma_Mixed_Coupling_Final_Constraints:
- - 0.962402882887 lambda_bad - 0.0375971171132 lambda_good + lambda_obj >= 0
+ - 0.366928336288 lambda_bad - 0.633071663712 lambda_good + lambda_obj >= 0
 LP_4,_Page_16,_l_obj_>=_l_good: - lambda_good + lambda_obj >= 0
 LP_4,_Page_16,_l_obj_>=_l_sing: lambda_obj - lambda_sing >= 0
 _C1: p1 = 1
